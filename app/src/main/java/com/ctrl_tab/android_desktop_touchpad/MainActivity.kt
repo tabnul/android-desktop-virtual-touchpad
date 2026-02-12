@@ -8,7 +8,6 @@ import android.graphics.Rect
 import android.os.Bundle
 import android.provider.Settings
 import android.view.*
-import android.view.inputmethod.InputMethodManager
 import android.widget.*
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -26,9 +25,7 @@ class MainActivity : AppCompatActivity() {
     private var touchSlop = 0f
     private var isCursorHidden = false
 
-    private lateinit var hiddenInput: EditText
     private lateinit var btnSettings: ImageButton
-    private lateinit var btnKeyboard: ImageButton
 
     override fun onResume() {
         super.onResume()
@@ -40,35 +37,14 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         touchSlop = ViewConfiguration.get(this).scaledTouchSlop.toFloat()
 
-        // Voorkom dat de activity focus steelt zodat het externe keyboard open kan blijven
+        // Voorkom focus-overname om keyboard-interactie op monitor te stabiliseren
         window.addFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)
 
         val root = FrameLayout(this).apply {
             setBackgroundColor(Color.parseColor("#1A1A1A"))
-            isFocusable = false
-            isFocusableInTouchMode = false
         }
 
-        // Verborgen input voor keyboard focus
-        hiddenInput = EditText(this).apply {
-            layoutParams = FrameLayout.LayoutParams(1, 1)
-            alpha = 0f
-        }
-        root.addView(hiddenInput)
-
-        // 1. Keyboard-knop (Links boven)
-        btnKeyboard = ImageButton(this).apply {
-            setImageResource(android.R.drawable.ic_menu_edit)
-            setBackgroundColor(Color.parseColor("#44000000"))
-            setPadding(20, 20, 20, 20)
-            setOnClickListener { toggleKeyboard() }
-        }
-        root.addView(btnKeyboard, FrameLayout.LayoutParams(120, 120).apply {
-            gravity = Gravity.TOP or Gravity.START
-            setMargins(20, 20, 20, 20)
-        })
-
-        // 2. Settings-knop (Rechts boven)
+        // Instellingen-knop (Rechts boven)
         btnSettings = ImageButton(this).apply {
             setImageResource(android.R.drawable.ic_menu_preferences)
             setBackgroundColor(Color.parseColor("#44000000"))
@@ -83,8 +59,7 @@ class MainActivity : AppCompatActivity() {
         setContentView(root)
 
         root.setOnTouchListener { _, event ->
-            // Voorkom touchpad actie als er op een knop wordt gedrukt
-            if (isTouchInsideView(event, btnSettings) || isTouchInsideView(event, btnKeyboard)) {
+            if (isTouchInsideView(event, btnSettings)) {
                 return@setOnTouchListener false
             }
 
@@ -135,12 +110,6 @@ class MainActivity : AppCompatActivity() {
         return rect.contains(event.rawX.toInt(), event.rawY.toInt())
     }
 
-    private fun toggleKeyboard() {
-        hiddenInput.requestFocus()
-        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-        imm.showSoftInput(hiddenInput, InputMethodManager.SHOW_IMPLICIT)
-    }
-
     private fun handleMultiTouch(e: MotionEvent, dy: Float, s: CursorService) {
         try {
             val dist = calculateDist(e)
@@ -155,7 +124,7 @@ class MainActivity : AppCompatActivity() {
         val layout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(50, 40, 50, 40) }
 
         // --- Grootte ---
-        layout.addView(TextView(this).apply { text = "Cursor Grootte" })
+        layout.addView(TextView(this).apply { text = "Cursor Grootte"; setTextColor(Color.BLACK) })
         layout.addView(SeekBar(this).apply {
             max = 150; progress = sharedPref.getInt("cursor_size", 40)
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
@@ -169,7 +138,7 @@ class MainActivity : AppCompatActivity() {
         })
 
         // --- Gevoeligheid ---
-        layout.addView(TextView(this).apply { text = "Gevoeligheid" })
+        layout.addView(TextView(this).apply { text = "Gevoeligheid"; setTextColor(Color.BLACK) })
         layout.addView(SeekBar(this).apply {
             max = 100; progress = (sharedPref.getFloat("cursor_sensitivity", 2.5f) * 10).toInt()
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
@@ -182,8 +151,8 @@ class MainActivity : AppCompatActivity() {
             setPadding(0, 10, 0, 30)
         })
 
-        // --- Kleur ---
-        layout.addView(TextView(this).apply { text = "Kleur" })
+        // --- Kleuren ---
+        layout.addView(TextView(this).apply { text = "Kleur"; setTextColor(Color.BLACK) })
         val colorRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val colors = mapOf("Red" to Color.RED, "Blue" to Color.BLUE, "Green" to Color.GREEN, "White" to Color.WHITE)
         for ((name, col) in colors) {
@@ -196,19 +165,19 @@ class MainActivity : AppCompatActivity() {
         }
         layout.addView(colorRow)
 
-        // --- Systeem ---
+        // --- Acties ---
         val btnRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, 30, 0, 0) }
         btnRow.addView(Button(this).apply {
-            text = if (isCursorHidden) "Show" else "Hide"
+            text = if (isCursorHidden) "Toon Cursor" else "Verberg Cursor"
             setOnClickListener {
                 isCursorHidden = !isCursorHidden
                 CursorService.instance?.toggleCursor(isCursorHidden)
-                text = if (isCursorHidden) "Show" else "Hide"
+                text = if (isCursorHidden) "Toon Cursor" else "Verberg Cursor"
             }
             layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
         })
         btnRow.addView(Button(this).apply {
-            text = "System"; layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
+            text = "Systeem"; layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
             setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
         })
         layout.addView(btnRow)
