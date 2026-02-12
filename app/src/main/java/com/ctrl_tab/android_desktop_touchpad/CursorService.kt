@@ -30,19 +30,14 @@ class CursorService : AccessibilityService() {
     private var cursorX = 500f
     private var cursorY = 500f
 
-    // ✅ LIVE UPDATE: Luister naar wijzigingen in kleur of grootte
     private val prefsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-        if (key == "cursor_size" || key == "cursor_color") {
-            updateCursorAppearance()
-        }
+        if (key == "cursor_size" || key == "cursor_color") updateCursorAppearance()
     }
 
     override fun onServiceConnected() {
         instance = this
         displayManager = getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
         prefs = getSharedPreferences("CursorSettings", Context.MODE_PRIVATE)
-
-        // Registreer de listener
         prefs.registerOnSharedPreferenceChangeListener(prefsListener)
 
         displayManager.registerDisplayListener(object : DisplayManager.DisplayListener {
@@ -78,7 +73,6 @@ class CursorService : AccessibilityService() {
     private fun createVisualCursor() {
         cursorView = ImageView(this).apply { setImageResource(android.R.drawable.presence_online) }
         updateCursorAppearance()
-
         val size = prefs.getInt("cursor_size", 40)
         val params = WindowManager.LayoutParams(size, size, WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
@@ -86,7 +80,6 @@ class CursorService : AccessibilityService() {
         try { windowManager?.addView(cursorView, params) } catch (e: Exception) {}
     }
 
-    // ✅ HIER GEBEURT DE MAGIE: Update kleur en grootte van de bestaande View
     fun updateCursorAppearance() {
         val size = prefs.getInt("cursor_size", 40)
         val color = prefs.getInt("cursor_color", Color.RED)
@@ -95,8 +88,7 @@ class CursorService : AccessibilityService() {
                 view.setColorFilter(color)
                 val p = view.layoutParams as? WindowManager.LayoutParams
                 if (p != null) {
-                    p.width = size
-                    p.height = size
+                    p.width = size; p.height = size
                     try { windowManager?.updateViewLayout(view, p) } catch (e: Exception) {}
                 }
             }
@@ -135,9 +127,4 @@ class CursorService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {}
     override fun onInterrupt() { instance = null }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        prefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
-    }
 }
