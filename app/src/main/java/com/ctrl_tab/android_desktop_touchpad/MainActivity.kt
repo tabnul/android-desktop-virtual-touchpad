@@ -12,6 +12,7 @@ import android.widget.*
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import kotlin.math.hypot
+import android.accessibilityservice.AccessibilityService
 
 class MainActivity : AppCompatActivity() {
 
@@ -37,14 +38,15 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         touchSlop = ViewConfiguration.get(this).scaledTouchSlop.toFloat()
 
-        // Voorkom focus-overname om keyboard-interactie op monitor te stabiliseren
+        // Prevent main screen from taking focus from desktop screen
+
         window.addFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)
 
         val root = FrameLayout(this).apply {
             setBackgroundColor(Color.parseColor("#1A1A1A"))
         }
 
-        // Instellingen-knop (Rechts boven)
+        // Settings button
         btnSettings = ImageButton(this).apply {
             setImageResource(android.R.drawable.ic_menu_preferences)
             setBackgroundColor(Color.parseColor("#44000000"))
@@ -102,6 +104,19 @@ class MainActivity : AppCompatActivity() {
             }
             true
         }
+        // --- Send to accessibility setting if service is not enabled ---
+        if (!isAccessibilityServiceEnabled(this, CursorService::class.java)) {
+            AlertDialog.Builder(this)
+                .setTitle("Permissions required")
+                .setMessage("To move the cursor on the external screen, you need to enable the 'Pixel Touchpad' accessibility service.")
+                .setPositiveButton("Open settings") { _, _ ->
+                    val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                    intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    startActivity(intent)
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
+        }
     }
 
     private fun isTouchInsideView(event: MotionEvent, view: View): Boolean {
@@ -123,8 +138,8 @@ class MainActivity : AppCompatActivity() {
         val sharedPref = getSharedPreferences("CursorSettings", Context.MODE_PRIVATE)
         val layout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(50, 40, 50, 40) }
 
-        // --- Grootte ---
-        layout.addView(TextView(this).apply { text = "Cursor Grootte"; setTextColor(Color.BLACK) })
+        // --- Size ---
+        layout.addView(TextView(this).apply { text = "Cursor Size"; setTextColor(Color.BLACK) })
         layout.addView(SeekBar(this).apply {
             max = 150; progress = sharedPref.getInt("cursor_size", 40)
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
@@ -137,8 +152,8 @@ class MainActivity : AppCompatActivity() {
             setPadding(0, 10, 0, 30)
         })
 
-        // --- Gevoeligheid ---
-        layout.addView(TextView(this).apply { text = "Gevoeligheid"; setTextColor(Color.BLACK) })
+        // --- Sensitivity ---
+        layout.addView(TextView(this).apply { text = "Sensitivity"; setTextColor(Color.BLACK) })
         layout.addView(SeekBar(this).apply {
             max = 100; progress = (sharedPref.getFloat("cursor_sensitivity", 2.5f) * 10).toInt()
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
@@ -151,8 +166,8 @@ class MainActivity : AppCompatActivity() {
             setPadding(0, 10, 0, 30)
         })
 
-        // --- Kleuren ---
-        layout.addView(TextView(this).apply { text = "Kleur"; setTextColor(Color.BLACK) })
+        // --- Colors ---
+        layout.addView(TextView(this).apply { text = "Color"; setTextColor(Color.BLACK) })
         val colorRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val colors = mapOf("Red" to Color.RED, "Blue" to Color.BLUE, "Green" to Color.GREEN, "White" to Color.WHITE)
         for ((name, col) in colors) {
@@ -165,25 +180,35 @@ class MainActivity : AppCompatActivity() {
         }
         layout.addView(colorRow)
 
-        // --- Acties ---
+        // --- Actions ---
         val btnRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, 30, 0, 0) }
         btnRow.addView(Button(this).apply {
-            text = if (isCursorHidden) "Toon Cursor" else "Verberg Cursor"
+            text = if (isCursorHidden) "Show Cursor" else "Hide Cursor"
             setOnClickListener {
                 isCursorHidden = !isCursorHidden
                 CursorService.instance?.toggleCursor(isCursorHidden)
-                text = if (isCursorHidden) "Toon Cursor" else "Verberg Cursor"
+                text = if (isCursorHidden) "Hide Cursor" else "Hide Cursor"
             }
             layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
         })
         btnRow.addView(Button(this).apply {
-            text = "Systeem"; layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
+            text = "Permissions"; layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
             setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
         })
         layout.addView(btnRow)
 
-        AlertDialog.Builder(this).setTitle("Instellingen").setView(layout).setPositiveButton("Sluiten", null).show()
+        AlertDialog.Builder(this).setTitle("Settings").setView(layout).setPositiveButton("Close", null).show()
     }
 
     private fun calculateDist(e: MotionEvent) = try { hypot(e.getX(0)-e.getX(1), e.getY(0)-e.getY(1)) } catch(ex: Exception) { 0f }
+
+    // --- Check for Accessibility Service ---
+    private fun isAccessibilityServiceEnabled(context: Context, service: Class<out AccessibilityService>): Boolean {
+        val expectedId = context.packageName + "/" + service.canonicalName
+        val enabledServices = Settings.Secure.getString(
+            context.contentResolver,
+            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+        )
+        return enabledServices?.contains(expectedId) ?: false
+    }
 }
