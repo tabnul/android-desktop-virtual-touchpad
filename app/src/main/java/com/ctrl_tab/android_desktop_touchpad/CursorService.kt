@@ -26,36 +26,31 @@ class CursorService : AccessibilityService() {
     private var cursorX = 500f
     private var cursorY = 500f
 
-    private val prefsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-        if (key == "cursor_size" || key == "cursor_color") updateCursorAppearance()
-    }
-
-    private val displayListener = object : DisplayManager.DisplayListener {
-        override fun onDisplayAdded(id: Int) {
-            Handler(Looper.getMainLooper()).postDelayed({ updateDisplayAndCursor() }, 500)
-        }
-        override fun onDisplayRemoved(id: Int) { updateDisplayAndCursor() }
-        override fun onDisplayChanged(id: Int) { updateDisplayAndCursor() }
-    }
-
     override fun onServiceConnected() {
         instance = this
         displayManager = getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
-        displayManager.registerDisplayListener(displayListener, null)
         prefs = getSharedPreferences("CursorSettings", Context.MODE_PRIVATE)
-        prefs.registerOnSharedPreferenceChangeListener(prefsListener)
+
+        displayManager.registerDisplayListener(object : DisplayManager.DisplayListener {
+            override fun onDisplayAdded(id: Int) { Handler(Looper.getMainLooper()).postDelayed({ updateDisplayAndCursor() }, 500) }
+            override fun onDisplayRemoved(id: Int) { updateDisplayAndCursor() }
+            override fun onDisplayChanged(id: Int) { updateDisplayAndCursor() }
+        }, null)
+
         updateDisplayAndCursor()
+    }
+
+    fun toggleCursor(hide: Boolean) {
+        cursorView?.post { cursorView?.visibility = if (hide) View.GONE else View.VISIBLE }
     }
 
     fun updateDisplayAndCursor() {
         val displays = displayManager.displays
         val newId = if (displays.size > 1) displays[displays.size - 1].displayId else Display.DEFAULT_DISPLAY
-
         cursorView?.let { try { windowManager?.removeView(it) } catch (e: Exception) {} }
         cursorView = null
         windowManager = null
         targetDisplayId = newId
-
         if (targetDisplayId != Display.DEFAULT_DISPLAY) {
             val targetDisplay = displayManager.getDisplay(targetDisplayId)
             if (targetDisplay != null) {
@@ -67,42 +62,23 @@ class CursorService : AccessibilityService() {
     }
 
     private fun createVisualCursor() {
-        cursorView = ImageView(this).apply {
-            setImageResource(android.R.drawable.presence_online)
-            setColorFilter(prefs.getInt("cursor_color", Color.RED))
-        }
-        updateCursorAppearance()
-        val params = WindowManager.LayoutParams(
-            prefs.getInt("cursor_size", 40), prefs.getInt("cursor_size", 40),
-            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
-            PixelFormat.TRANSLUCENT
-        ).apply { gravity = Gravity.TOP or Gravity.LEFT; x = cursorX.toInt(); y = cursorY.toInt() }
-        try { windowManager?.addView(cursorView, params) } catch (e: Exception) {}
-    }
-
-    fun updateCursorAppearance() {
+        cursorView = ImageView(this).apply { setImageResource(android.R.drawable.presence_online) }
         val size = prefs.getInt("cursor_size", 40)
         val color = prefs.getInt("cursor_color", Color.RED)
-        cursorView?.let { view ->
-            view.setColorFilter(color)
-            val p = view.layoutParams as? WindowManager.LayoutParams
-            if (p != null) {
-                p.width = size; p.height = size
-                try { windowManager?.updateViewLayout(view, p) } catch (e: Exception) {}
-            }
-        }
+        cursorView?.setColorFilter(color)
+
+        val params = WindowManager.LayoutParams(size, size, WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            PixelFormat.TRANSLUCENT).apply { gravity = Gravity.TOP or Gravity.LEFT; x = cursorX.toInt(); y = cursorY.toInt() }
+        try { windowManager?.addView(cursorView, params) } catch (e: Exception) {}
     }
 
     fun moveCursor(dx: Float, dy: Float) {
         val wm = windowManager ?: return
-        val display = displayManager.getDisplay(targetDisplayId) ?: return
         val metrics = android.util.DisplayMetrics()
-        display.getRealMetrics(metrics)
-
+        displayManager.getDisplay(targetDisplayId).getRealMetrics(metrics)
         cursorX = (cursorX + dx).coerceIn(0f, metrics.widthPixels.toFloat() - 5)
         cursorY = (cursorY + dy).coerceIn(0f, metrics.heightPixels.toFloat() - 5)
-
         cursorView?.let {
             val p = it.layoutParams as WindowManager.LayoutParams
             p.x = cursorX.toInt(); p.y = cursorY.toInt()
@@ -112,9 +88,7 @@ class CursorService : AccessibilityService() {
 
     fun performClick(isRight: Boolean) {
         val path = Path().apply { moveTo(cursorX, cursorY) }
-        dispatchGesture(GestureDescription.Builder()
-            .addStroke(GestureDescription.StrokeDescription(path, 0, if (isRight) 600L else 50L))
-            .setDisplayId(targetDisplayId).build(), null, null)
+        dispatchGesture(GestureDescription.Builder().addStroke(GestureDescription.StrokeDescription(path, 0, if (isRight) 600L else 50L)).setDisplayId(targetDisplayId).build(), null, null)
     }
 
     fun scroll(dy: Float) {
@@ -123,17 +97,10 @@ class CursorService : AccessibilityService() {
     }
 
     fun zoom(zoomIn: Boolean) {
-        val d = if (zoomIn) 150f else 20f
-        val ed = if (zoomIn) 20f else 150f
+        val d = if (zoomIn) 150f else 20f; val ed = if (zoomIn) 20f else 150f
         val p1 = Path().apply { moveTo(cursorX - d, cursorY); lineTo(cursorX - ed, cursorY) }
         val p2 = Path().apply { moveTo(cursorX + d, cursorY); lineTo(cursorX + ed, cursorY) }
         dispatchGesture(GestureDescription.Builder().addStroke(GestureDescription.StrokeDescription(p1, 0, 200)).addStroke(GestureDescription.StrokeDescription(p2, 0, 200)).setDisplayId(targetDisplayId).build(), null, null)
-    }
-
-    fun swipeNav(forward: Boolean) {
-        val startX = if (forward) cursorX - 300 else cursorX + 300
-        val path = Path().apply { moveTo(startX, cursorY); lineTo(cursorX, cursorY) }
-        dispatchGesture(GestureDescription.Builder().addStroke(GestureDescription.StrokeDescription(path, 0, 150)).setDisplayId(targetDisplayId).build(), null, null)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {}
