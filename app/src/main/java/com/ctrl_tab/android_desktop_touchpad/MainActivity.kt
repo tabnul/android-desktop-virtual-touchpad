@@ -32,9 +32,7 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         touchSlop = ViewConfiguration.get(this).scaledTouchSlop.toFloat()
 
-        val root = FrameLayout(this).apply {
-            setBackgroundColor(Color.parseColor("#1A1A1A"))
-        }
+        val root = FrameLayout(this).apply { setBackgroundColor(Color.parseColor("#1A1A1A")) }
 
         val btnSettings = ImageButton(this).apply {
             setImageResource(android.R.drawable.ic_menu_preferences)
@@ -66,10 +64,8 @@ class MainActivity : AppCompatActivity() {
                     if (event.pointerCount == 2) initialPinchDist = calculateDist(event)
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    // Gebruik directe verplaatsing zonder rotatie-matrix
                     val dx = event.x - lastX
                     val dy = event.y - lastY
-
                     if (!isMoving && hypot(dx, dy) > touchSlop) isMoving = true
 
                     if (event.pointerCount == 1) {
@@ -104,49 +100,48 @@ class MainActivity : AppCompatActivity() {
         val sharedPref = getSharedPreferences("CursorSettings", Context.MODE_PRIVATE)
         val layout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(50, 40, 50, 40) }
 
-        // Size Slider
-        layout.addView(TextView(this).apply { text = "Cursor Size"; setTextColor(Color.BLACK) })
+        // Grootte
+        layout.addView(TextView(this).apply { text = "Cursor Size" })
         layout.addView(SeekBar(this).apply {
             max = 150; progress = sharedPref.getInt("cursor_size", 40)
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(s: SeekBar?, p: Int, b: Boolean) { sharedPref.edit().putInt("cursor_size", p.coerceAtLeast(10)).apply() }
-                override fun onStartTrackingTouch(s: SeekBar?) {}; override fun onStopTrackingTouch(s: SeekBar?) {}
+                override fun onProgressChanged(s: SeekBar?, p: Int, b: Boolean) {
+                    sharedPref.edit().putInt("cursor_size", p.coerceAtLeast(10)).apply()
+                }
+                override fun onStartTrackingTouch(s: SeekBar?) {}
+                override fun onStopTrackingTouch(s: SeekBar?) {}
             })
         })
 
-        // Sensitivity Slider
-        layout.addView(TextView(this).apply { text = "Sensitivity"; setTextColor(Color.BLACK); setPadding(0,20,0,0) })
-        layout.addView(SeekBar(this).apply {
-            max = 100; progress = (sharedPref.getFloat("cursor_sensitivity", 2.5f) * 10).toInt()
-            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(s: SeekBar?, p: Int, b: Boolean) { sharedPref.edit().putFloat("cursor_sensitivity", p.coerceAtLeast(5) / 10f).apply() }
-                override fun onStartTrackingTouch(s: SeekBar?) {}; override fun onStopTrackingTouch(s: SeekBar?) {}
-            })
-        })
-
-        // Color buttons
-        val colors = mapOf("Red" to Color.RED, "Blue" to Color.BLUE, "Green" to Color.parseColor("#008000"), "White" to Color.WHITE)
-        val colorRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, 20, 0, 20) }
+        // Kleuren
+        layout.addView(TextView(this).apply { text = "Kleur"; setPadding(0, 20, 0, 10) })
+        val colorRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val colors = mapOf("Red" to Color.RED, "Blue" to Color.BLUE, "Green" to Color.GREEN, "White" to Color.WHITE)
         for ((name, col) in colors) {
             colorRow.addView(Button(this).apply {
-                text = name; setTextColor(if (col == Color.WHITE) Color.BLACK else col); setBackgroundColor(Color.LTGRAY)
-                layoutParams = LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(5,0,5,0) }
+                text = name
+                setBackgroundColor(Color.LTGRAY)
+                setTextColor(if(col == Color.WHITE) Color.BLACK else col)
+                layoutParams = LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(5, 5, 5, 5) }
                 setOnClickListener { sharedPref.edit().putInt("cursor_color", col).apply() }
             })
         }
         layout.addView(colorRow)
 
-        val btnRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val btnRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, 20, 0, 0) }
         btnRow.addView(Button(this).apply {
             text = if (isCursorHidden) "Show" else "Hide"
-            layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
             setOnClickListener {
                 isCursorHidden = !isCursorHidden
                 CursorService.instance?.toggleCursor(isCursorHidden)
                 text = if (isCursorHidden) "Show" else "Hide"
             }
+            layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
         })
-        btnRow.addView(Button(this).apply { text = "System Settings"; layoutParams = LinearLayout.LayoutParams(0, -2, 1f); setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) } })
+        btnRow.addView(Button(this).apply {
+            text = "System"; layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
+            setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+        })
         layout.addView(btnRow)
 
         AlertDialog.Builder(this).setTitle("Settings").setView(layout).setPositiveButton("Close", null).show()

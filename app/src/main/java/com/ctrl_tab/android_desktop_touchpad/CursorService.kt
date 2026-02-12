@@ -10,7 +10,11 @@ import android.graphics.PixelFormat
 import android.hardware.display.DisplayManager
 import android.os.Handler
 import android.os.Looper
-import android.view.*
+import android.util.DisplayMetrics
+import android.view.Display
+import android.view.Gravity
+import android.view.View
+import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.widget.ImageView
 
@@ -26,10 +30,20 @@ class CursorService : AccessibilityService() {
     private var cursorX = 500f
     private var cursorY = 500f
 
+    // ✅ LIVE UPDATE: Luister naar wijzigingen in kleur of grootte
+    private val prefsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == "cursor_size" || key == "cursor_color") {
+            updateCursorAppearance()
+        }
+    }
+
     override fun onServiceConnected() {
         instance = this
         displayManager = getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
         prefs = getSharedPreferences("CursorSettings", Context.MODE_PRIVATE)
+
+        // Registreer de listener
+        prefs.registerOnSharedPreferenceChangeListener(prefsListener)
 
         displayManager.registerDisplayListener(object : DisplayManager.DisplayListener {
             override fun onDisplayAdded(id: Int) { Handler(Looper.getMainLooper()).postDelayed({ updateDisplayAndCursor() }, 500) }
@@ -63,19 +77,35 @@ class CursorService : AccessibilityService() {
 
     private fun createVisualCursor() {
         cursorView = ImageView(this).apply { setImageResource(android.R.drawable.presence_online) }
-        val size = prefs.getInt("cursor_size", 40)
-        val color = prefs.getInt("cursor_color", Color.RED)
-        cursorView?.setColorFilter(color)
+        updateCursorAppearance()
 
+        val size = prefs.getInt("cursor_size", 40)
         val params = WindowManager.LayoutParams(size, size, WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT).apply { gravity = Gravity.TOP or Gravity.LEFT; x = cursorX.toInt(); y = cursorY.toInt() }
         try { windowManager?.addView(cursorView, params) } catch (e: Exception) {}
     }
 
+    // ✅ HIER GEBEURT DE MAGIE: Update kleur en grootte van de bestaande View
+    fun updateCursorAppearance() {
+        val size = prefs.getInt("cursor_size", 40)
+        val color = prefs.getInt("cursor_color", Color.RED)
+        cursorView?.let { view ->
+            view.post {
+                view.setColorFilter(color)
+                val p = view.layoutParams as? WindowManager.LayoutParams
+                if (p != null) {
+                    p.width = size
+                    p.height = size
+                    try { windowManager?.updateViewLayout(view, p) } catch (e: Exception) {}
+                }
+            }
+        }
+    }
+
     fun moveCursor(dx: Float, dy: Float) {
         val wm = windowManager ?: return
-        val metrics = android.util.DisplayMetrics()
+        val metrics = DisplayMetrics()
         displayManager.getDisplay(targetDisplayId).getRealMetrics(metrics)
         cursorX = (cursorX + dx).coerceIn(0f, metrics.widthPixels.toFloat() - 5)
         cursorY = (cursorY + dy).coerceIn(0f, metrics.heightPixels.toFloat() - 5)
@@ -105,4 +135,9 @@ class CursorService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {}
     override fun onInterrupt() { instance = null }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        prefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
+    }
 }
