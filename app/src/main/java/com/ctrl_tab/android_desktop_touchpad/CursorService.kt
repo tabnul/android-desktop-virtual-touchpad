@@ -11,6 +11,7 @@ import android.hardware.display.DisplayManager
 import android.os.Handler
 import android.os.Looper
 import android.util.DisplayMetrics
+import android.util.Log
 import android.view.Display
 import android.view.Gravity
 import android.view.View
@@ -20,7 +21,10 @@ import android.widget.ImageView
 
 class CursorService : AccessibilityService() {
 
-    companion object { var instance: CursorService? = null }
+    companion object {
+        var instance: CursorService? = null
+        private const val TAG = "CursorService"
+    }
 
     private lateinit var displayManager: DisplayManager
     private var windowManager: WindowManager? = null
@@ -56,10 +60,21 @@ class CursorService : AccessibilityService() {
     fun updateDisplayAndCursor() {
         val displays = displayManager.displays
         val newId = if (displays.size > 1) displays[displays.size - 1].displayId else Display.DEFAULT_DISPLAY
-        cursorView?.let { try { windowManager?.removeView(it) } catch (e: Exception) {} }
+
+        // If the target display hasn't changed (e.g. an app just toggled fullscreen),
+        // don't tear everything down — just make sure the cursor is still attached.
+        if (newId == targetDisplayId && cursorView != null && windowManager != null) {
+            reassertCursor()
+            return
+        }
+
+        cursorView?.let {
+            try { windowManager?.removeView(it) } catch (e: Exception) { Log.w(TAG, "removeView failed", e) }
+        }
         cursorView = null
         windowManager = null
         targetDisplayId = newId
+
         if (targetDisplayId != Display.DEFAULT_DISPLAY) {
             val targetDisplay = displayManager.getDisplay(targetDisplayId)
             if (targetDisplay != null) {
@@ -70,14 +85,41 @@ class CursorService : AccessibilityService() {
         }
     }
 
+    /** Re-adds the cursor overlay if it has been dropped (e.g. after a fullscreen transition). */
+    private fun reassertCursor() {
+        val view = cursorView ?: return
+        val wm = windowManager ?: return
+        if (view.isAttachedToWindow) return
+        val params = view.layoutParams as? WindowManager.LayoutParams ?: return
+        try {
+            wm.addView(view, params)
+        } catch (e: Exception) {
+            Log.w(TAG, "reassertCursor failed", e)
+        }
+    }
+
     private fun createVisualCursor() {
         cursorView = ImageView(this).apply { setImageResource(android.R.drawable.presence_online) }
         updateCursorAppearance()
         val size = prefs.getInt("cursor_size", 40)
-        val params = WindowManager.LayoutParams(size, size, WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
-            PixelFormat.TRANSLUCENT).apply { gravity = Gravity.TOP or Gravity.LEFT; x = cursorX.toInt(); y = cursorY.toInt() }
-        try { windowManager?.addView(cursorView, params) } catch (e: Exception) {}
+        val params = WindowManager.LayoutParams(
+            size, size,
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.LEFT
+            x = cursorX.toInt()
+            y = cursorY.toInt()
+        }
+        try {
+            windowManager?.addView(cursorView, params)
+        } catch (e: Exception) {
+            Log.w(TAG, "addView failed", e)
+        }
     }
 
     fun updateCursorAppearance() {
@@ -89,7 +131,7 @@ class CursorService : AccessibilityService() {
                 val p = view.layoutParams as? WindowManager.LayoutParams
                 if (p != null) {
                     p.width = size; p.height = size
-                    try { windowManager?.updateViewLayout(view, p) } catch (e: Exception) {}
+                    try { windowManager?.updateViewLayout(view, p) } catch (e: Exception) { Log.w(TAG, "updateCursorAppearance failed", e) }
                 }
             }
         }
@@ -104,7 +146,7 @@ class CursorService : AccessibilityService() {
         cursorView?.let {
             val p = it.layoutParams as WindowManager.LayoutParams
             p.x = cursorX.toInt(); p.y = cursorY.toInt()
-            try { wm.updateViewLayout(it, p) } catch (e: Exception) {}
+            try { wm.updateViewLayout(it, p) } catch (e: Exception) { Log.w(TAG, "moveCursor failed", e) }
         }
     }
 
@@ -125,6 +167,16 @@ class CursorService : AccessibilityService() {
         dispatchGesture(GestureDescription.Builder().addStroke(GestureDescription.StrokeDescription(p1, 0, 200)).addStroke(GestureDescription.StrokeDescription(p2, 0, 200)).setDisplayId(targetDisplayId).build(), null, null)
     }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent) {}
+    override fun onAccessibilityEvent(event: AccessibilityEvent) {
+        when (event.eventType) {
+            AccessibilityEvent.TYPE_WINDOWS_CHANGED,
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
+                // An app likely changed window state (e.g. entered fullscreen on the
+                // external display). Make sure our overlay is still attached on top.
+                cursorView?.post { reassertCursor() }
+            }
+        }
+    }
+
     override fun onInterrupt() { instance = null }
 }
